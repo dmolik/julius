@@ -10,4 +10,5 @@ require (
 	github.com/laurent22/ical-go v0.1.0 // indirect
 	github.com/lib/pq v1.3.0
 	github.com/samedi/caldav-go v3.0.0+incompatible
+	gopkg.in/yaml.v2 v2.2.8
 )

@@ -10,12 +10,22 @@ import (
 	"github.com/go-logr/glogr"
 	"time"
 	"encoding/base64"
+	"flag"
+
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"path/filepath"
 
 	_ "github.com/lib/pq"
 	"github.com/samedi/caldav-go"
 	"github.com/samedi/caldav-go/data"
 	"github.com/samedi/caldav-go/errs"
 )
+
+type Config struct {
+	DB   string `yaml:"db"`
+	Host string `yaml:"host"`
+}
 
 type server struct {
 	db *sql.DB
@@ -286,7 +296,28 @@ func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
 
 func main() {
 	log := glogr.New().WithName("Julius")
-	db, err := sql.Open("postgres", "user=calendar database=calendar sslmode=disable")
+	var confFlag string
+	flag.StringVar(&confFlag, "conf", "julius.conf", "config file path")
+	flag.Parse()
+
+	filename, err := filepath.Abs(confFlag)
+	if err != nil {
+		log.Error(err, "failed to read conf")
+		os.Exit(1)
+	}
+	yamlFile, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Error(err, "failed to read conf")
+		os.Exit(1)
+	}
+	conf := Config{}
+	err = yaml.Unmarshal(yamlFile, &conf)
+	if err != nil {
+		log.Error(err, "failed to read conf")
+		os.Exit(1)
+	}
+
+	db, err := sql.Open("postgres", conf.DB)
 	if err != nil {
 		log.Error(err, "failed to open db")
 		os.Exit(1)
@@ -294,5 +325,5 @@ func main() {
 	s := server{db: db, log: log}
 	defer db.Close()
 	http.HandleFunc("/", s.myHandler)
-	http.ListenAndServe(":3000", nil)
+	http.ListenAndServe(conf.Host, nil)
 }
