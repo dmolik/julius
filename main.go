@@ -27,6 +27,13 @@ type Config struct {
 	Host string `yaml:"host"`
 }
 
+func Defaults() *Config {
+	return &Config{
+		DB:   "user=calendar database=calendar sslmode=disable",
+		Host: "0.0.0.0:3000",
+	}
+}
+
 type server struct {
 	db *sql.DB
 	log logr.Logger
@@ -300,21 +307,43 @@ func main() {
 	flag.StringVar(&confFlag, "conf", "julius.conf", "config file path")
 	flag.Parse()
 
-	filename, err := filepath.Abs(confFlag)
-	if err != nil {
-		log.Error(err, "failed to read conf")
-		os.Exit(1)
-	}
-	yamlFile, err := ioutil.ReadFile(filename)
-	if err != nil {
-		log.Error(err, "failed to read conf")
-		os.Exit(1)
-	}
-	conf := Config{}
-	err = yaml.Unmarshal(yamlFile, &conf)
-	if err != nil {
-		log.Error(err, "failed to read conf")
-		os.Exit(1)
+	conf := Defaults()
+
+	if confFlag == "julius.conf" {
+		_, err := os.Stat(confFlag)
+		if err == nil {
+			filename , err := filepath.Abs(confFlag)
+			if err != nil {
+				log.Error(err, "failed to read conf")
+				os.Exit(1)
+			}
+			yamlFile, err := ioutil.ReadFile(filename)
+			if err != nil {
+				log.Error(err, "failed to read conf")
+				os.Exit(1)
+			}
+			err = yaml.Unmarshal(yamlFile, &conf)
+			if err != nil {
+				log.Error(err, "failed to read conf")
+				os.Exit(1)
+			}
+		}
+	} else {
+		filename, err := filepath.Abs(confFlag)
+		if err != nil {
+			log.Error(err, "failed to read conf")
+			os.Exit(1)
+		}
+		yamlFile, err := ioutil.ReadFile(filename)
+		if err != nil {
+			log.Error(err, "failed to read conf")
+			os.Exit(1)
+		}
+		err = yaml.Unmarshal(yamlFile, &conf)
+		if err != nil {
+			log.Error(err, "failed to read conf")
+			os.Exit(1)
+		}
 	}
 
 	db, err := sql.Open("postgres", conf.DB)
