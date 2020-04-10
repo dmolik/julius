@@ -316,22 +316,22 @@ func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var password string
-	rows, err := s.db.Query("SELECT password FROM users WHERE username = $1 AND password = crypt($2, password)", pair[0], pair[1])
+	var id string
+	rows, err := s.db.Query("SELECT id FROM users WHERE username = $1 AND password = crypt($2, password)", pair[0], pair[1])
 	if err != nil {
 		s.log.Error(err, "failed to fetch user[", pair[0], "] password")
 		http.Error(w, "user fetch error", 500)
 		return
 	}
 	for rows.Next() {
-		err = rows.Scan(&password)
+		err = rows.Scan(&id)
 		if err != nil {
 			s.log.Error(err, "failed to fetch user[", pair[0], "] password")
 			http.Error(w, "user fetch error", 500)
 			return
 		}
 	}
-	if pair[1] != password {
+	if id == ""  {
 		http.Error(w, "Not authorized", 403)
 		return
 	}
