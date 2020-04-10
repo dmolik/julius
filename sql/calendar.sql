@@ -30,14 +30,13 @@ CREATE TABLE calendar (
 /* INSERT INTO users (username, password) VALUES ("dan", crypt("somepassword", gen_salt('bf', 12))); */
 CREATE TABLE users (
 	id         SERIAL PRIMARY KEY,
-	username   TEXT NOT NULL,
-	email      TEXT;
+	username   TEXT UNIQUE NOT NULL,
+	email      TEXT,
 	password   VARCHAR(64) NOT NULL, /* crypt('input', password) */
-	firstname  TEXT;
-	lastname   TEXT;
+	firstname  TEXT,
+	lastname   TEXT,
 	isverified BOOLEAN DEFAULT false
 );
-
 CREATE INDEX user_index ON users (username, password);
 CREATE INDEX user_cal_index ON users (id, firstname, lastname);
 CREATE INDEX cal_index ON calendar (rpath);
