@@ -5,7 +5,7 @@ build: bindata.go
 	go build -v .
 
 schema:
-	psql -U calendar calendar -f calendar.sql
+	psql -U calendar calendar -f sql/calendar.sql
 
 clean: clean-db
 
