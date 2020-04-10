@@ -303,7 +303,7 @@ func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *server) setupDB() error {
-	logr := s.log.WithValues("DB Setup")
+	logr := s.log.WithValues("DBSetup")
 	if err := s.db.Ping(); err != nil {
 		logr.Error(err, "failed to connect to DB, is it running")
 		return err

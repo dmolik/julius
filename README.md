@@ -12,4 +12,14 @@ At the moment Julius doesn't set up it's own database so you will need to run `m
 
 ## Running
 
-It's easy just execute the Julius binary `./julius`
+Setup your database:
+
+    CREATE DATABASE calendar;
+    CREATE USER calendar WITH PASSWORD '$PASSWORD';
+    GRANT ALL  PRIVILEGES ON DATABASE "calendar" to calendar;
+    \c calendar
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+
+Then just execute the Julius binary `./julius -conf julius.conf`
