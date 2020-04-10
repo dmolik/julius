@@ -27,14 +27,14 @@ CREATE TABLE calendar (
 	children uuid[]
 );
 
-/* INSERT INTO users (username, password) VALUES ("dan", crypt("somepassword", gen_salt('bf'))); */
+/* INSERT INTO users (username, password) VALUES ("dan", crypt("somepassword", gen_salt('bf', 12))); */
 CREATE TABLE users (
 	id         SERIAL PRIMARY KEY,
 	username   TEXT NOT NULL,
-	email      TEXT NOT NULL,
+	email      TEXT;
 	password   VARCHAR(64) NOT NULL, /* crypt('input', password) */
-	firstname  TEXT NOT NULL,
-	lastname   TEXT NOT NULL,
+	firstname  TEXT;
+	lastname   TEXT;
 	isverified BOOLEAN DEFAULT false
 );
 

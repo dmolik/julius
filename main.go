@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"net/http"
 	"database/sql"
 	"fmt"
@@ -289,17 +290,57 @@ func (pa *PGResourceAdapter) GetModTime() time.Time {
 	return mod
 }
 
-func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
+func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
 	stg := new(PGStorage)
 	stg.db = s.db
 	stg.log = s.log
+	s.log.V(3).Info(fmt.Sprintf("%v", r))
+
+	w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+
+	str := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+	if len(str) != 2 {
+		http.Error(w, "Not authorized", 401)
+		return
+	}
+
+	b, err := base64.StdEncoding.DecodeString(str[1])
+	if err != nil {
+		http.Error(w, err.Error(), 401)
+		return
+	}
+
+	pair := strings.SplitN(string(b), ":", 2)
+	if len(pair) != 2 {
+		http.Error(w, "Not authorized", 401)
+		return
+	}
+
+	var password string
+	rows, err := s.db.Query("SELECT password FROM users WHERE username = $1 AND password = crypt($2, password)", pair[0], pair[1])
+	if err != nil {
+		s.log.Error(err, "failed to fetch user[", pair[0], "] password")
+		http.Error(w, "user fetch error", 500)
+		return
+	}
+	for rows.Next() {
+		err = rows.Scan(&password)
+		if err != nil {
+			s.log.Error(err, "failed to fetch user[", pair[0], "] password")
+			http.Error(w, "user fetch error", 500)
+			return
+		}
+	}
+	if pair[1] != password {
+		http.Error(w, "Not authorized", 403)
+		return
+	}
 	caldav.SetupStorage(stg)
-	// log.Printf("%v\n", request)
 	// log.Printf("%v\n", request.Body)
-	response := caldav.HandleRequest(request)
+	response := caldav.HandleRequest(r)
 	// log.Printf("%v\n", response)
 	// ... do something with the response object before writing it back to the client ...
-	response.Write(writer)
+	response.Write(w)
 }
 
 func (s *server) setupDB() error {
@@ -337,10 +378,11 @@ func (s *server) setupDB() error {
 }
 
 func main() {
-	log := glogr.New().WithName("Julius")
 	var confFlag string
 	flag.StringVar(&confFlag, "conf", "julius.conf", "config file path")
 	flag.Parse()
+
+	log := glogr.New().WithName("Julius")
 
 	conf := Defaults()
 
@@ -381,6 +423,7 @@ func main() {
 		}
 	}
 
+
 	db, err := sql.Open("postgres", conf.DB)
 	if err != nil {
 		log.Error(err, "failed to open db")
@@ -391,6 +434,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	log.V(2).Info("starting")
 	http.HandleFunc("/", s.myHandler)
 	http.ListenAndServe(conf.Host, nil)
 }
