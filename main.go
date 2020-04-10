@@ -304,6 +304,10 @@ func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
 
 func (s *server) setupDB() error {
 	logr := s.log.WithValues("DB Setup")
+	if err := s.db.Ping(); err != nil {
+		logr.Error(err, "failed to connect to DB, is it running")
+		return err
+	}
 	_, err := s.db.Query("SELECT * FROM calendar LIMIT 1")
 	if err == nil {
 		return nil
@@ -382,7 +386,7 @@ func main() {
 		log.Error(err, "failed to open db")
 		os.Exit(1)
 	}
-	s := server{db: db, log: log}
+	s := server{db: db, log: log, ctx: context.Background() }
 	if err = s.setupDB() ; err != nil {
 		os.Exit(1)
 	}
