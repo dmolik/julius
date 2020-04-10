@@ -304,6 +304,10 @@ func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
 
 func (s *server) setupDB() error {
 	logr := s.log.WithValues("DB Setup")
+	_, err := s.db.Query("SELECT * FROM calendar LIMIT 1")
+	if err == nil {
+		return nil
+	}
 	schema, err := Asset("sql/calendar.sql")
 	if err != nil {
 		logr.Error(err, "failed to unpack sql template [sql/calendar.sql]")
