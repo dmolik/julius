@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"context"
+	"context"
 	"os"
 	"net/http"
 	"database/sql"
@@ -35,6 +35,7 @@ func Defaults() *Config {
 }
 
 type server struct {
+	ctx context.Context
 	db *sql.DB
 	log logr.Logger
 }
@@ -301,6 +302,32 @@ func (s *server) myHandler(writer http.ResponseWriter, request *http.Request) {
 	response.Write(writer)
 }
 
+func (s *server) setupDB() error {
+	logr := s.log.WithValues("DB Setup")
+	schema, err := Asset("sql/calendar.sql")
+	if err != nil {
+		logr.Error(err, "failed to unpack sql template [sql/calendar.sql]")
+		return err
+	}
+	tx, err := s.db.BeginTx(s.ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		logr.Error(err, "failed to begin DB transaction")
+		return err
+	}
+	_, err = tx.Exec(string(schema))
+	if err != nil {
+		_ = tx.Rollback()
+		logr.Error(err, "rolling back TX")
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		logr.Error(err, "failed to commit")
+		return err
+	}
+
+	return nil
+}
+
 func main() {
 	log := glogr.New().WithName("Julius")
 	var confFlag string
@@ -352,6 +379,9 @@ func main() {
 		os.Exit(1)
 	}
 	s := server{db: db, log: log}
+	if err = s.setupDB() ; err != nil {
+		os.Exit(1)
+	}
 	defer db.Close()
 	http.HandleFunc("/", s.myHandler)
 	http.ListenAndServe(conf.Host, nil)
