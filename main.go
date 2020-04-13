@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-	"os"
-	"strings"
-	"net/http"
 	"database/sql"
-	"fmt"
-	"github.com/go-logr/logr"
-	"github.com/go-logr/glogr"
-	"time"
 	"encoding/base64"
 	"flag"
+	"fmt"
+	"github.com/go-logr/glogr"
+	"github.com/go-logr/logr"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -37,13 +37,16 @@ func Defaults() *Config {
 
 type server struct {
 	ctx context.Context
-	db *sql.DB
+	db  *sql.DB
 	log logr.Logger
 }
 
 type PGStorage struct {
-	db *sql.DB
-	log logr.Logger
+	db     *sql.DB
+	log    logr.Logger
+	UserID int64
+	Email  string
+	User   string
 }
 
 func (ps *PGStorage) GetResourcesByList(rpaths []string) ([]data.Resource, error) {
@@ -64,8 +67,11 @@ func (ps *PGStorage) GetResourcesByList(rpaths []string) ([]data.Resource, error
 	return results, nil
 }
 
-func hasChildren(rpath string) bool {
-	if rpath == "/" {
+func isCollection(rpath string) bool {
+	if rpath[len(rpath) - 1 : ] == "/" {
+		return true
+	}
+	if rpath[len(rpath) - 3 : ] != "ics" {
 		return true
 	}
 	return false
@@ -73,11 +79,12 @@ func hasChildren(rpath string) bool {
 
 func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resource, error) {
 	logr := ps.log.WithValues("GetResources()", "PGStorage")
+	logr.V(5).Info("Getting " + rpath)
 	result := []data.Resource{}
 
 	var rows *sql.Rows
 	var err error
-	rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1", rpath)
+	rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND user_id = $2 ", rpath, ps.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch rpath")
 		return nil, err
@@ -91,15 +98,15 @@ func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resou
 			logr.Error(err, "failed to scan rows")
 			return nil, err
 		}
-		res := data.NewResource(rrpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log.WithValues("PGResourceAdapter")})
+		res := data.NewResource(rrpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log.WithValues("PGResourceAdapter"), UserID: ps.UserID})
 		result = append(result, res)
 	}
-	if hasChildren(rpath) {
-		res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log.WithValues("PGResourceAdapter")})
+	if isCollection(rpath) {
+		res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log.WithValues("PGResourceAdapter"), UserID: ps.UserID})
 		result = append(result, res)
 	}
-	if withChildren && hasChildren(rpath) {
-		rows, err = ps.db.Query("SELECT rpath FROM calendar")
+	if withChildren && isCollection(rpath) {
+		rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE user_id = $1", ps.UserID)
 		if err != nil {
 			logr.Error(err, "failed to scan rows")
 			return nil, err
@@ -112,7 +119,7 @@ func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resou
 				logr.Error(err, "failed to scan rows")
 				return nil, err
 			}
-			res := data.NewResource(rrpath, &PGResourceAdapter{db: ps.db, resourcePath: rrpath, log: ps.log.WithValues("PGResourceAdapter")})
+			res := data.NewResource(rrpath, &PGResourceAdapter{db: ps.db, resourcePath: rrpath, log: ps.log.WithValues("PGResourceAdapter"), UserID: ps.UserID})
 			result = append(result, res)
 		}
 	}
@@ -123,6 +130,7 @@ func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resou
 func (ps *PGStorage) GetResourcesByFilters(rpath string, filters *data.ResourceFilter) ([]data.Resource, error) {
 	result := []data.Resource{}
 
+	//childPaths := fs.getDirectoryChildPaths(rpath)
 	res, err := ps.GetResources("/", true)
 	if err != nil {
 		return nil, err
@@ -158,17 +166,18 @@ func (ps *PGStorage) GetShallowResource(rpath string) (*data.Resource, bool, err
 
 func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, error) {
 	logr := ps.log.WithValues("CreateResource()", "PGStorage")
-	stmt, err := ps.db.Prepare("INSERT INTO calendar (rpath, content) VALUES ($1, $2)")
+	logr.V(5).Info("Creating " + rpath)
+	stmt, err := ps.db.Prepare("INSERT INTO calendar (rpath, content, user_id) VALUES ($1, $2, $3)")
 	if err != nil {
 		logr.Error(err, "failed to prepare insert statement")
 		return nil, err
 	}
 	defer stmt.Close()
-	if _, err := stmt.Exec(rpath, base64.StdEncoding.EncodeToString([]byte(content))); err != nil {
+	if _, err := stmt.Exec(rpath, base64.StdEncoding.EncodeToString([]byte(content)), ps.UserID); err != nil {
 		logr.Error(err, "failed to insert ", rpath)
 		return nil, err
 	}
-	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log})
+	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log, UserID: ps.UserID})
 	logr.V(7).Info("resource created ", rpath)
 	return &res, nil
 }
@@ -185,14 +194,14 @@ func (ps *PGStorage) UpdateResource(rpath, content string) (*data.Resource, erro
 		logr.Error(err, "failed to update ", rpath)
 		return nil, err
 	}
-	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log})
+	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.db, resourcePath: rpath, log: ps.log, UserID: ps.UserID})
 	logr.V(7).Info("resource updated ", rpath)
 	return &res, nil
 }
 
 func (ps *PGStorage) DeleteResource(rpath string) error {
 	logr := ps.log.WithValues("DeleteResource()", "PGStorage")
-	_, err := ps.db.Exec("DELETE FROM calendar WHERE rpath = $1", rpath)
+	_, err := ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND user_ud = $2", rpath, ps.UserID)
 	if err != nil {
 		logr.Info("failed to delete resource ", rpath, " ", err.Error())
 		return err
@@ -201,7 +210,7 @@ func (ps *PGStorage) DeleteResource(rpath string) error {
 }
 
 func (ps *PGStorage) isResourcePresent(rpath string) bool {
-	rows, err := ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1", rpath)
+	rows, err := ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND user_id = $2", rpath, ps.UserID)
 	if err != nil {
 		return false
 	}
@@ -220,9 +229,10 @@ func (ps *PGStorage) isResourcePresent(rpath string) bool {
 }
 
 type PGResourceAdapter struct {
-	db *sql.DB
+	db           *sql.DB
 	resourcePath string
-	log logr.Logger
+	log          logr.Logger
+	UserID       int64
 }
 
 func (pa *PGResourceAdapter) CalculateEtag() string {
@@ -238,7 +248,7 @@ func (pa *PGResourceAdapter) GetContent() string {
 	if pa.IsCollection() {
 		return ""
 	}
-	rows, err := pa.db.Query("SELECT content FROM calendar WHERE rpath = $1", pa.resourcePath)
+	rows, err := pa.db.Query("SELECT content FROM calendar WHERE rpath = $1 AND user_id = $2", pa.resourcePath, pa.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch content ", pa.resourcePath)
 		return ""
@@ -265,15 +275,12 @@ func (pa *PGResourceAdapter) GetContentSize() int64 {
 }
 
 func (pa *PGResourceAdapter) IsCollection() bool {
-	if pa.resourcePath == "/" {
-		return true
-	}
-	return false
+	return isCollection(pa.resourcePath)
 }
 
 func (pa *PGResourceAdapter) GetModTime() time.Time {
 	logr := pa.log.WithValues("GetModTime()")
-	rows, err := pa.db.Query("SELECT modified FROM calendar WHERE rpath = $1", pa.resourcePath)
+	rows, err := pa.db.Query("SELECT modified FROM calendar WHERE rpath = $1 AND user_id = $2", pa.resourcePath, pa.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch modTime ", pa.resourcePath)
 		return time.Unix(0, 0)
@@ -291,9 +298,6 @@ func (pa *PGResourceAdapter) GetModTime() time.Time {
 }
 
 func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
-	stg := new(PGStorage)
-	stg.db = s.db
-	stg.log = s.log
 	s.log.V(3).Info(fmt.Sprintf("%v", r))
 
 	w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
@@ -316,28 +320,37 @@ func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var id string
-	rows, err := s.db.Query("SELECT id FROM users WHERE username = $1 AND password = crypt($2, password)", pair[0], pair[1])
+	var username, email string
+	var id int64
+	rows, err := s.db.Query("SELECT id, username, email FROM users WHERE username = $1 AND password = crypt($2, password)", pair[0], pair[1])
 	if err != nil {
 		s.log.Error(err, "failed to fetch user[", pair[0], "] password")
 		http.Error(w, "user fetch error", 500)
 		return
 	}
 	for rows.Next() {
-		err = rows.Scan(&id)
+		err = rows.Scan(&id, &username, &email)
 		if err != nil {
 			s.log.Error(err, "failed to fetch user[", pair[0], "] password")
 			http.Error(w, "user fetch error", 500)
 			return
 		}
 	}
-	if id == ""  {
+	if id == 0 {
 		http.Error(w, "Not authorized", 403)
 		return
 	}
+	stg       := new(PGStorage)
+	stg.db     = s.db
+	stg.log    = s.log
+	stg.User   = username
+	stg.UserID = id
+	stg.Email  = email
+
 	caldav.SetupStorage(stg)
 	// log.Printf("%v\n", request.Body)
 	response := caldav.HandleRequest(r)
+	s.log.V(3).Info(fmt.Sprintf("%v", response))
 	// log.Printf("%v\n", response)
 	// ... do something with the response object before writing it back to the client ...
 	response.Write(w)
@@ -389,7 +402,7 @@ func main() {
 	if confFlag == "julius.conf" {
 		_, err := os.Stat(confFlag)
 		if err == nil {
-			filename , err := filepath.Abs(confFlag)
+			filename, err := filepath.Abs(confFlag)
 			if err != nil {
 				log.Error(err, "failed to read conf")
 				os.Exit(1)
@@ -423,14 +436,13 @@ func main() {
 		}
 	}
 
-
 	db, err := sql.Open("postgres", conf.DB)
 	if err != nil {
 		log.Error(err, "failed to open db")
 		os.Exit(1)
 	}
-	s := server{db: db, log: log, ctx: context.Background() }
-	if err = s.setupDB() ; err != nil {
+	s := server{db: db, log: log, ctx: context.Background()}
+	if err = s.setupDB(); err != nil {
 		os.Exit(1)
 	}
 	defer db.Close()
