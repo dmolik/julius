@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"regexp"
 
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -77,14 +78,66 @@ func isCollection(rpath string) bool {
 	return false
 }
 
+func (ps *PGStorage) haveAccess(rpath string, perm string) (bool, error) {
+	logr := ps.log.WithValues("haveAccess()", "PGStorage")
+
+	var rows *sql.Rows
+	var err error
+	rows, err = ps.db.Query("SELECT permission FROM collection_role JOIN users ON collection_role.user_id = users.id JOIN collection ON collection_role.collection_id = collection.id  WHERE collection.name = $1 AND users.id = $2", getCollection(rpath), ps.UserID)
+	if err != nil {
+		logr.Error(err, "failed to fetch permissions for " + rpath)
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rowPerm string
+		err := rows.Scan(&perm)
+		if err != nil {
+			logr.Error(err, "failed to scan rows")
+			return false, err
+		}
+		if rowPerm == "admin" {
+			return true, nil
+		}
+		if rowPerm == "write" && perm == "admin" {
+			return false, nil
+		} else {
+			return true, nil
+		}
+		if rowPerm == "read" && perm == "read" {
+			return true, nil
+		} else {
+			return false, nil
+		}
+	}
+
+	return false, nil
+}
+
+
+var regex = regexp.MustCompile(`/[A-Za-z0-9-]*\.ics`)
+func getCollection(rpath string) string {
+	replace := regex.ReplaceAll([]byte(rpath), []byte("/"))
+	return string(replace)
+}
+
 func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resource, error) {
 	logr := ps.log.WithValues("GetResources()", "PGStorage")
 	logr.V(5).Info("Getting " + rpath)
 	result := []data.Resource{}
 
+	a, err := ps.haveAccess(rpath, "read")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", rpath)
+		return nil, err
+	}
+	if ! a {
+		logr.Info("no access to collection ", rpath)
+		return nil, nil
+	}
 	var rows *sql.Rows
-	var err error
-	rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND user_id = $2 ", rpath, ps.UserID)
+	rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND owner_id = $2 ", rpath, ps.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch rpath")
 		return nil, err
@@ -106,7 +159,7 @@ func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resou
 		result = append(result, res)
 	}
 	if withChildren && isCollection(rpath) {
-		rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE user_id = $1", ps.UserID)
+		rows, err = ps.db.Query("SELECT rpath FROM calendar WHERE owner_id = $1", ps.UserID)
 		if err != nil {
 			logr.Error(err, "failed to scan rows")
 			return nil, err
@@ -167,7 +220,16 @@ func (ps *PGStorage) GetShallowResource(rpath string) (*data.Resource, bool, err
 func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, error) {
 	logr := ps.log.WithValues("CreateResource()", "PGStorage")
 	logr.V(5).Info("Creating " + rpath)
-	stmt, err := ps.db.Prepare("INSERT INTO calendar (rpath, content, user_id) VALUES ($1, $2, $3)")
+	a, err := ps.haveAccess(rpath, "write")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", rpath)
+		return nil, err
+	}
+	if ! a {
+		logr.Info("no access to collection ", rpath)
+		return nil, nil
+	}
+	stmt, err := ps.db.Prepare("INSERT INTO calendar (rpath, content, owner_id) VALUES ($1, $2, $3)")
 	if err != nil {
 		logr.Error(err, "failed to prepare insert statement")
 		return nil, err
@@ -184,6 +246,15 @@ func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, erro
 
 func (ps *PGStorage) UpdateResource(rpath, content string) (*data.Resource, error) {
 	logr := ps.log.WithValues("UpdateResource()", "PGStorage")
+	a, err := ps.haveAccess(rpath, "write")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", rpath)
+		return nil, err
+	}
+	if ! a {
+		logr.Info("no access to collection ", rpath)
+		return nil, nil
+	}
 	stmt, err := ps.db.Prepare("UPDATE calendar SET content = $2, modified = $3 WHERE rpath = $1")
 	if err != nil {
 		logr.Error(err, "failed to prepare update statement ", rpath)
@@ -201,7 +272,16 @@ func (ps *PGStorage) UpdateResource(rpath, content string) (*data.Resource, erro
 
 func (ps *PGStorage) DeleteResource(rpath string) error {
 	logr := ps.log.WithValues("DeleteResource()", "PGStorage")
-	_, err := ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND user_ud = $2", rpath, ps.UserID)
+	a, err := ps.haveAccess(rpath, "admin")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", rpath)
+		return  err
+	}
+	if ! a {
+		logr.Info("no access to collection ", rpath)
+		return nil
+	}
+	_, err = ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND user_ud = $2", rpath, ps.UserID)
 	if err != nil {
 		logr.Info("failed to delete resource ", rpath, " ", err.Error())
 		return err
@@ -210,7 +290,7 @@ func (ps *PGStorage) DeleteResource(rpath string) error {
 }
 
 func (ps *PGStorage) isResourcePresent(rpath string) bool {
-	rows, err := ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND user_id = $2", rpath, ps.UserID)
+	rows, err := ps.db.Query("SELECT rpath FROM calendar WHERE rpath = $1 AND owner_id = $2", rpath, ps.UserID)
 	if err != nil {
 		return false
 	}
@@ -243,12 +323,58 @@ func (pa *PGResourceAdapter) CalculateEtag() string {
 	return fmt.Sprintf(`"%x%x"`, pa.GetContentSize(), pa.GetModTime().UnixNano())
 }
 
+func (pa *PGResourceAdapter) haveAccess(perm string) (bool, error) {
+	logr := pa.log.WithValues("haveAccess()")
+
+	var rows *sql.Rows
+	var err error
+	rows, err = pa.db.Query("SELECT permission FROM collection_role JOIN users ON collection_role.user_id = users.id JOIN collection ON collection_role.collection_id = collection.id  WHERE collection.name = $1 AND users.id = $2", getCollection(pa.resourcePath), pa.UserID)
+	if err != nil {
+		logr.Error(err, "failed to fetch permissions for " + pa.resourcePath)
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rowPerm string
+		err := rows.Scan(&perm)
+		if err != nil {
+			logr.Error(err, "failed to scan rows")
+			return false, err
+		}
+		if rowPerm == "admin" {
+			return true, nil
+		}
+		if rowPerm == "write" && perm == "admin" {
+			return false, nil
+		} else {
+			return true, nil
+		}
+		if rowPerm == "read" && perm == "read" {
+			return true, nil
+		} else {
+			return false, nil
+		}
+	}
+
+	return false, nil
+}
+
+
 func (pa *PGResourceAdapter) GetContent() string {
 	logr := pa.log.WithValues("GetContent()")
 	if pa.IsCollection() {
 		return ""
 	}
-	rows, err := pa.db.Query("SELECT content FROM calendar WHERE rpath = $1 AND user_id = $2", pa.resourcePath, pa.UserID)
+	a, err := pa.haveAccess("read")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", pa.resourcePath)
+		return ""
+	}
+	if ! a {
+		return ""
+	}
+	rows, err := pa.db.Query("SELECT content FROM calendar WHERE rpath = $1 AND owner_id = $2", pa.resourcePath, pa.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch content ", pa.resourcePath)
 		return ""
@@ -280,7 +406,16 @@ func (pa *PGResourceAdapter) IsCollection() bool {
 
 func (pa *PGResourceAdapter) GetModTime() time.Time {
 	logr := pa.log.WithValues("GetModTime()")
-	rows, err := pa.db.Query("SELECT modified FROM calendar WHERE rpath = $1 AND user_id = $2", pa.resourcePath, pa.UserID)
+	a, err := pa.haveAccess("read")
+	if err != nil {
+		logr.Error(err, "failed to get Access ", pa.resourcePath)
+		return time.Unix(0, 0)
+	}
+	if ! a {
+		logr.Info("failed to get Access ", pa.resourcePath)
+		return time.Unix(0, 0)
+	}
+	rows, err := pa.db.Query("SELECT modified FROM calendar WHERE rpath = $1 AND owner_id = $2", pa.resourcePath, pa.UserID)
 	if err != nil {
 		logr.Error(err, "failed to fetch modTime ", pa.resourcePath)
 		return time.Unix(0, 0)
