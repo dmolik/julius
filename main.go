@@ -281,7 +281,7 @@ func (ps *PGStorage) DeleteResource(rpath string) error {
 		logr.Info("no access to collection ", rpath)
 		return nil
 	}
-	_, err = ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND user_ud = $2", rpath, ps.UserID)
+	_, err = ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND owner_id = $2", rpath, ps.UserID)
 	if err != nil {
 		logr.Info("failed to delete resource ", rpath, " ", err.Error())
 		return err
