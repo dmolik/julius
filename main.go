@@ -24,9 +24,16 @@ import (
 	"github.com/samedi/caldav-go/errs"
 )
 
+type MailConfig struct {
+	Address  string `yaml:"address"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
 type Config struct {
-	DB   string `yaml:"db"`
-	Host string `yaml:"host"`
+	DB   string     `yaml:"db"`
+	Host string     `yaml:"host"`
+	Mail MailConfig `yaml:"smtp"`
 }
 
 func Defaults() *Config {
@@ -116,7 +123,7 @@ func (ps *PGStorage) haveAccess(rpath string, perm string) (bool, error) {
 }
 
 
-var regex = regexp.MustCompile(`/[A-Za-z0-9-]*\.ics`)
+var regex = regexp.MustCompile(`/[A-Za-z0-9-%@\.]*\.ics`)
 func getCollection(rpath string) string {
 	replace := regex.ReplaceAll([]byte(rpath), []byte("/"))
 	return string(replace)
@@ -129,11 +136,11 @@ func (ps *PGStorage) GetResources(rpath string, withChildren bool) ([]data.Resou
 
 	a, err := ps.haveAccess(rpath, "read")
 	if err != nil {
-		logr.Error(err, "failed to get Access ", rpath)
+		logr.Error(err, "failed to get Access [" + rpath + "]")
 		return nil, err
 	}
 	if ! a {
-		logr.Info("no access to collection ", rpath)
+		logr.Info("no access to collection [" + rpath + "]")
 		return nil, nil
 	}
 	var rows *sql.Rows
@@ -222,11 +229,11 @@ func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, erro
 	logr.V(5).Info("Creating " + rpath)
 	a, err := ps.haveAccess(rpath, "write")
 	if err != nil {
-		logr.Error(err, "failed to get Access ", rpath)
+		logr.Error(err, "failed to get Access [" + rpath + "]")
 		return nil, err
 	}
 	if ! a {
-		logr.Info("no access to collection ", rpath)
+		logr.Info("no access to collection [" + rpath + "]")
 		return nil, nil
 	}
 	stmt, err := ps.db.Prepare("INSERT INTO calendar (rpath, content, owner_id) VALUES ($1, $2, $3)")
@@ -248,11 +255,11 @@ func (ps *PGStorage) UpdateResource(rpath, content string) (*data.Resource, erro
 	logr := ps.log.WithValues("UpdateResource()", "PGStorage")
 	a, err := ps.haveAccess(rpath, "write")
 	if err != nil {
-		logr.Error(err, "failed to get Access ", rpath)
+		logr.Error(err, "failed to get Access [" + rpath + "]")
 		return nil, err
 	}
 	if ! a {
-		logr.Info("no access to collection ", rpath)
+		logr.Info("no access to collection [" + rpath + "]")
 		return nil, nil
 	}
 	stmt, err := ps.db.Prepare("UPDATE calendar SET content = $2, modified = $3 WHERE rpath = $1")
@@ -274,11 +281,11 @@ func (ps *PGStorage) DeleteResource(rpath string) error {
 	logr := ps.log.WithValues("DeleteResource()", "PGStorage")
 	a, err := ps.haveAccess(rpath, "admin")
 	if err != nil {
-		logr.Error(err, "failed to get Access ", rpath)
+		logr.Error(err, "failed to get Access [" + rpath + "]")
 		return  err
 	}
 	if ! a {
-		logr.Info("no access to collection ", rpath)
+		logr.Info("no access to collection [" + rpath + "]")
 		return nil
 	}
 	_, err = ps.db.Exec("DELETE FROM calendar WHERE rpath = $1 AND owner_id = $2", rpath, ps.UserID)

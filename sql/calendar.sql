@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS collection_role;
 CREATE TABLE calendar (
 	id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
 	owner_id INT, /* NOT NULL, */
+	created  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 	modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 	rpath   TEXT,
 	content TEXT,
