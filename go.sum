@@ -1,9 +1,9 @@
 github.com/beevik/etree v1.1.0 h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
-github.com/dmolik/caldav-go v1.4.0 h1:ye/mp+mje9fr///smnjTjVyHb6YMkXW+2n76xJ0Re3Y=
-github.com/dmolik/caldav-go v1.4.0/go.mod h1:hw721s7NZebIGMhYBMR5UBntnkJqEogr30d1iCyCo7E=
-github.com/dmolik/ical-go v0.2.0 h1:YWj2gwFGadaG5+l7Bj2KC7KYVPw6CQ4qsbP2kkU5DPw=
-github.com/dmolik/ical-go v0.2.0/go.mod h1:QsImYdxUAIYx+WMRqs5eLjyXbSvsrljQwRcDjUxwbCo=
+github.com/dmolik/caldav-go v1.4.2 h1:2C1BidEWpXXSWbo7W6koRwAnYn7c8rZJ03U5FTyxLCs=
+github.com/dmolik/caldav-go v1.4.2/go.mod h1:wn+QB2vv1Yql12d9kLUlgHdRIiFjnZchlRwE7bQzxQM=
+github.com/dmolik/ical-go v0.2.2 h1:uFoXnz2B1CXtbm3XlfCtrhuXxwQvBM27JLW8c1Bch48=
+github.com/dmolik/ical-go v0.2.2/go.mod h1:QsImYdxUAIYx+WMRqs5eLjyXbSvsrljQwRcDjUxwbCo=
 github.com/go-logr/glogr v0.1.0 h1:5W02LkUIi+DaBwtWKYGxoX9gqVMo6i9ehwkhorjcP74=
 github.com/go-logr/glogr v0.1.0/go.mod h1:GDQ2+z9PAAX7+qBhL3FzAL2Nf8dxyliu0ppgJIX7YhU=
 github.com/go-logr/logr v0.1.0 h1:M1Tv3VzNlEHg6uyACnRdtrploV2P7wZqH8BoQMtz0cg=

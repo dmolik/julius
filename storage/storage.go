@@ -214,7 +214,7 @@ func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, erro
 	}
 	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.DB, resourcePath: rpath, log: ps.Log, UserID: ps.UserID})
 	attend := res.GetPropertyValue("VEVENT", "ATTENDEE")
-	logr.Info("addtending: " + attend)
+	logr.Info("attending: " + attend)
 	ps.Mailer.Send(ps.User, ps.Email, content)
 	logr.V(7).Info("resource created ", rpath)
 	return &res, nil
