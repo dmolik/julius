@@ -17,22 +17,17 @@ import (
 	"path/filepath"
 
 	_ "github.com/lib/pq"
-	"github.com/samedi/caldav-go"
+	"github.com/dmolik/caldav-go"
 
+	"github.com/dmolik/julius/mail"
 	"github.com/dmolik/julius/storage"
 
 )
 
-type MailConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
 type Config struct {
 	db   string     `yaml:"db"`
 	Host string     `yaml:"host"`
-	Mail MailConfig `yaml:"smtp"`
+	Mail mail.Mail  `yaml:"smtp"`
 }
 
 func Defaults() *Config {
@@ -46,6 +41,7 @@ type server struct {
 	ctx context.Context
 	db  *sql.DB
 	log logr.Logger
+	mail mail.Mail
 }
 
 func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +93,7 @@ func (s *server) myHandler(w http.ResponseWriter, r *http.Request) {
 	stg.User   = username
 	stg.UserID = id
 	stg.Email  = email
+	stg.Mailer = s.mail
 
 	caldav.SetupStorage(stg)
 	// log.Printf("%v\n", request.Body)
@@ -143,14 +140,14 @@ func (s *server) setupDB() error {
 
 func main() {
 	var confFlag string
-	flag.StringVar(&confFlag, "conf", "julius.conf", "config file path")
+	flag.StringVar(&confFlag, "conf", "julius.yaml", "config file path")
 	flag.Parse()
 
 	log := glogr.New().WithName("Julius")
 
 	conf := Defaults()
 
-	if confFlag == "julius.conf" {
+	if confFlag == "julius.yaml" {
 		_, err := os.Stat(confFlag)
 		if err == nil {
 			filename, err := filepath.Abs(confFlag)
@@ -192,7 +189,7 @@ func main() {
 		log.Error(err, "failed to open db")
 		os.Exit(1)
 	}
-	s := server{db: db, log: log, ctx: context.Background()}
+	s := server{db: db, log: log, mail: conf.Mail, ctx: context.Background()}
 	if err = s.setupDB(); err != nil {
 		os.Exit(1)
 	}

@@ -9,8 +9,9 @@ import (
 	"regexp"
 
 	_ "github.com/lib/pq"
-	"github.com/samedi/caldav-go/data"
-	"github.com/samedi/caldav-go/errs"
+	"github.com/dmolik/caldav-go/data"
+	"github.com/dmolik/caldav-go/errs"
+	"github.com/dmolik/julius/mail"
 )
 
 type PGStorage struct {
@@ -19,6 +20,7 @@ type PGStorage struct {
 	UserID int64
 	Email  string
 	User   string
+	Mailer mail.Mail
 }
 
 func (ps *PGStorage) GetResourcesByList(rpaths []string) ([]data.Resource, error) {
@@ -211,6 +213,9 @@ func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, erro
 		return nil, err
 	}
 	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.DB, resourcePath: rpath, log: ps.Log, UserID: ps.UserID})
+	attend := res.GetPropertyValue("VEVENT", "ATTENDEE")
+	logr.Info("addtending: " + attend)
+	ps.Mailer.Send(ps.User, ps.Email, content)
 	logr.V(7).Info("resource created ", rpath)
 	return &res, nil
 }
