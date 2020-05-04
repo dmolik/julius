@@ -7,6 +7,8 @@ import (
 	"github.com/go-logr/logr"
 	"time"
 	"regexp"
+	"strings"
+	"strconv"
 
 	_ "github.com/lib/pq"
 	"github.com/dmolik/caldav-go/data"
@@ -190,6 +192,16 @@ func (ps *PGStorage) GetShallowResource(rpath string) (*data.Resource, bool, err
 	return &res, true, nil
 }
 
+func parseMail(m string) string {
+	s := strings.Split(m, ":")
+	if s[0] == "mailto" {
+		if len(s) > 1 {
+			return s[1]
+		}
+	}
+	return m
+}
+
 func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, error) {
 	logr := ps.Log.WithValues("CreateResource()", "PGStorage")
 	logr.V(5).Info("Creating " + rpath)
@@ -213,9 +225,16 @@ func (ps *PGStorage) CreateResource(rpath, content string) (*data.Resource, erro
 		return nil, err
 	}
 	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.DB, resourcePath: rpath, log: ps.Log, UserID: ps.UserID})
-	attend := res.GetPropertyValue("VEVENT", "ATTENDEE")
-	logr.Info("attending: " + attend)
-	ps.Mailer.Send(ps.User, ps.Email, content)
+	attending := res.GetPropertyValues("VEVENT", "ATTENDEE")
+	title     := res.GetPropertyValue("VEVENT", "SUMMARY")
+	start     := res.StartTimeUTC()
+	end       := res.EndTimeUTC()
+	subject   := "Invitation: " + title + " @ " + start.Weekday().String() + " " + start.Month().String() + " " + strconv.Itoa(start.Day()) + ", " + strconv.Itoa(start.Year()) + " " + strconv.Itoa(start.Hour()) + " - " + strconv.Itoa(end.Hour()) + " (" + start.Location().String() + ") (" + ps.Email + ")"
+	for _, a := range attending {
+		u := parseMail(a)
+		ps.Mailer.Send(u, u, content, subject)
+	}
+	ps.Mailer.Send(ps.User, ps.Email, content, subject)
 	logr.V(7).Info("resource created ", rpath)
 	return &res, nil
 }
@@ -242,6 +261,16 @@ func (ps *PGStorage) UpdateResource(rpath, content string) (*data.Resource, erro
 		return nil, err
 	}
 	res := data.NewResource(rpath, &PGResourceAdapter{db: ps.DB, resourcePath: rpath, log: ps.Log, UserID: ps.UserID})
+	attending := res.GetPropertyValues("VEVENT", "ATTENDEE")
+	title     := res.GetPropertyValue("VEVENT", "SUMMARY")
+	start     := res.StartTimeUTC()
+	end       := res.EndTimeUTC()
+	subject   := "Updated invitation: " + title + " @ " + start.Weekday().String() + " " + start.Month().String() + " " + strconv.Itoa(start.Day()) + ", " + strconv.Itoa(start.Year()) + " " + strconv.Itoa(start.Hour()) + " - " + strconv.Itoa(end.Hour()) + " (" + start.Location().String() + ") (" + ps.Email + ")"
+	for _, a := range attending {
+		u := parseMail(a)
+		ps.Mailer.Send(u, u, content, subject)
+	}
+	ps.Mailer.Send(ps.User, ps.Email, content, subject)
 	logr.V(7).Info("resource updated ", rpath)
 	return &res, nil
 }

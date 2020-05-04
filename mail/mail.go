@@ -16,7 +16,7 @@ type Mail struct {
 	From     string `yaml:"from"`
 }
 
-	var calTemplate = string(`Subject:{{ .Subject }}
+var calTemplate = string(`Subject: {{ .Subject }}
 To: {{ .User -}} <{{ .Email -}}>
 From: Julius <{{ .NoReply -}}>
 MIME-Version: 1.0
@@ -47,7 +47,7 @@ type data struct {
 	User string
 }
 
-func (mailer Mail) Send(name string, email string, content string) {
+func (mailer Mail) Send(name string, email string, content string, subject string) {
 
 	// hostname is used by PlainAuth to validate the TLS certificate.
 	hostname := mailer.Address
@@ -85,7 +85,7 @@ func (mailer Mail) Send(name string, email string, content string) {
 	var msg bytes.Buffer
 
 	d := data{
-		Subject: "New Event",
+		Subject: subject,
 		Email: email,
 		User: name,
 		NoReply: mailer.From,
